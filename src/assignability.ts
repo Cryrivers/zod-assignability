@@ -254,14 +254,14 @@ export function isAssignable(schemaA: SomeType, schemaB: SomeType): boolean {
   if (isFunction(schemaA) && isFunction(schemaB)) {
     const { args: argsA, returns: retA } = getFunctionArgsReturns(schemaA);
     const { args: argsB, returns: retB } = getFunctionArgsReturns(schemaB);
-    
+
     // Returns: Covariant (A extends B)
     if (!isAssignable(retA, retB)) return false;
 
     // Args: Contravariant (B extends A)
     // argsA/B are Tuples.
     // We need to check if argsB is assignable to argsA.
-    // However, assignability checks 'can I pass A to B?'. 
+    // However, assignability checks 'can I pass A to B?'.
     // If I assign FuncA to FuncB, I call FuncB(argsB). This calls FuncA(argsB).
     // So argsB must be assignable to argsA.
     return isAssignable(argsB, argsA);
@@ -272,7 +272,7 @@ export function isAssignable(schemaA: SomeType, schemaB: SomeType): boolean {
     return isVoid(schemaA) || isUndefined(schemaA);
   }
   // undefined extends void? Yes.
-  
+
   // NaN
   if (isZodNaN(schemaA)) {
     return isZodNaN(schemaB) || isNumber(schemaB); // NaN extends number
