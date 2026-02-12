@@ -17,6 +17,13 @@ import {
   isIntersection,
   isCustom,
   isObject,
+  isDate,
+  isPromise,
+  isMap,
+  isSet,
+  isFunction,
+  isVoid,
+  isZodNaN,
 } from './type-guard.js';
 import {
   getArrayElement,
@@ -30,6 +37,10 @@ import {
   getUnionOptions,
   unwrapNullable,
   unwrapOptional,
+  getMapKeyValue,
+  getSetValue,
+  getPromiseInner,
+  getFunctionArgsReturns,
 } from './utils.js';
 
 type PrimitiveTypeName = 'string' | 'number' | 'boolean' | 'bigint' | 'symbol';
@@ -208,6 +219,63 @@ export function isAssignable(schemaA: SomeType, schemaB: SomeType): boolean {
     primitiveTypes.has((typeB ?? '') as PrimitiveTypeName)
   ) {
     return typeA === typeB;
+  }
+
+  // Date
+  if (isDate(schemaA) && isDate(schemaB)) {
+    return true;
+  }
+
+  // Promise (Covariant)
+  if (isPromise(schemaA) && isPromise(schemaB)) {
+    return isAssignable(getPromiseInner(schemaA), getPromiseInner(schemaB));
+  }
+
+  // Set (Invariant)
+  if (isSet(schemaA) && isSet(schemaB)) {
+    const valA = getSetValue(schemaA);
+    const valB = getSetValue(schemaB);
+    return isAssignable(valA, valB) && isAssignable(valB, valA);
+  }
+
+  // Map (Invariant Key & Value)
+  if (isMap(schemaA) && isMap(schemaB)) {
+    const { key: kA, value: vA } = getMapKeyValue(schemaA);
+    const { key: kB, value: vB } = getMapKeyValue(schemaB);
+    if (!kA || !kB || !vA || !vB) return false;
+    // Invariant Key
+    if (!isAssignable(kA, kB) || !isAssignable(kB, kA)) return false;
+    // Invariant Value
+    if (!isAssignable(vA, vB) || !isAssignable(vB, vA)) return false;
+    return true;
+  }
+
+  // Function (Contravariant Args, Covariant Return)
+  if (isFunction(schemaA) && isFunction(schemaB)) {
+    const { args: argsA, returns: retA } = getFunctionArgsReturns(schemaA);
+    const { args: argsB, returns: retB } = getFunctionArgsReturns(schemaB);
+    
+    // Returns: Covariant (A extends B)
+    if (!isAssignable(retA, retB)) return false;
+
+    // Args: Contravariant (B extends A)
+    // argsA/B are Tuples.
+    // We need to check if argsB is assignable to argsA.
+    // However, assignability checks 'can I pass A to B?'. 
+    // If I assign FuncA to FuncB, I call FuncB(argsB). This calls FuncA(argsB).
+    // So argsB must be assignable to argsA.
+    return isAssignable(argsB, argsA);
+  }
+
+  // Void
+  if (isVoid(schemaB)) {
+    return isVoid(schemaA) || isUndefined(schemaA);
+  }
+  // undefined extends void? Yes.
+  
+  // NaN
+  if (isZodNaN(schemaA)) {
+    return isZodNaN(schemaB) || isNumber(schemaB); // NaN extends number
   }
 
   // Undefined / Null handling
