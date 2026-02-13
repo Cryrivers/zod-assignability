@@ -12,6 +12,9 @@ In TypeScript, a type A is assignable to type B if every value that fits A is al
 - Tuples: same length, and each position must be assignable.
 - Unions: a source union extends a target only if every option in the source can be assigned to the target.
 - Intersections: a source intersection extends a target only if both sides do.
+- Functions: arguments are contravariant, return type is covariant.
+- Promises: inner type is covariant.
+- Maps/Sets: invariant element types (mutable containers).
 - Special types: `never` extends everything; everything extends `unknown` and `any` (conservatively).
 
 This library brings those rules to Zod schemas at runtime.
@@ -108,6 +111,9 @@ isAssignable(A, C); // true (A is assignable because C's 'age' is optional)
     isAssignable(z.boolean(), z.boolean()); // true
     isAssignable(z.boolean(), z.string()); // false
     ```
+  - `Date`: assignable to `Date` (and `unknown`/`any`).
+  - `Void`: `void` and `undefined` are assignable to `void`.
+  - `NaN`: `NaN` is assignable to `NaN` and `number`.
 
 - Arrays
   - Element types are covariant.
@@ -141,11 +147,34 @@ isAssignable(A, C); // true (A is assignable because C's 'age' is optional)
     ```
 
 - Records
-  - Key types and value types must be assignable.
+  - Key types and value types must be assignable (covariant).
     ```ts
     const R1 = z.record(z.string(), z.string());
     const R2 = z.record(z.string(), z.union([z.string(), z.number()]));
     isAssignable(R1, R2); // true
+    ```
+
+- Maps and Sets
+  - `Set<T>`: T is invariant (must be identical/mutually assignable).
+  - `Map<K, V>`: K and V are invariant.
+    ```ts
+    isAssignable(z.set(z.string()), z.set(z.string())); // true
+    isAssignable(z.set(z.string()), z.set(z.any())); // false
+    ```
+
+- Promises
+  - Covariant inner type.
+    ```ts
+    isAssignable(z.promise(z.string()), z.promise(z.string().or(z.number()))); // true
+    ```
+
+- Functions
+  - Arguments are contravariant (target args must extend source args).
+  - Return type is covariant.
+    ```ts
+    const F1 = z.function().args(z.string()).returns(z.number());
+    const F2 = z.function().args(z.string().or(z.number())).returns(z.number());
+    isAssignable(F2, F1); // true (F2 accepts everything F1 accepts and more)
     ```
 
 - Unions

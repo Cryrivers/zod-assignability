@@ -8,6 +8,10 @@ import {
   $ZodRecord,
   $ZodTuple,
   $ZodUnion,
+  $ZodMap,
+  $ZodSet,
+  $ZodPromise,
+  $ZodFunction,
   SomeType,
   util as coreUtil,
 } from 'zod/v4/core';
@@ -25,6 +29,33 @@ export function getRecordKeyValue(schema: $ZodRecord): {
   return {
     key: def.keyType,
     value: def.valueType,
+  };
+}
+
+export function getMapKeyValue(schema: $ZodMap): {
+  key?: SomeType;
+  value?: SomeType;
+} {
+  const def = schema._zod.def;
+  return {
+    key: def.keyType,
+    value: def.valueType,
+  };
+}
+
+export function getSetValue(schema: $ZodSet) {
+  return schema._zod.def.valueType;
+}
+
+export function getPromiseInner(schema: $ZodPromise) {
+  return schema._zod.def.innerType;
+}
+
+export function getFunctionArgsReturns(schema: $ZodFunction) {
+  const def = schema._zod.def;
+  return {
+    args: def.input,
+    returns: def.output,
   };
 }
 

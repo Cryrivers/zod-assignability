@@ -21,6 +21,13 @@ import {
   $ZodLiteral,
   $ZodRecord,
   $ZodUnion,
+  $ZodDate,
+  $ZodPromise,
+  $ZodMap,
+  $ZodSet,
+  $ZodFunction,
+  $ZodVoid,
+  $ZodNaN,
 } from 'zod/v4/core';
 
 import { getType } from './utils.js';
@@ -75,6 +82,18 @@ export function isNever(schema: SomeType): schema is $ZodNever {
   return getType(schema) === 'never';
 }
 
+export function isVoid(schema: SomeType): schema is $ZodVoid {
+  return getType(schema) === 'void';
+}
+
+export function isZodNaN(schema: SomeType): schema is $ZodNaN {
+  return getType(schema) === 'nan';
+}
+
+export function isDate(schema: SomeType): schema is $ZodDate {
+  return getType(schema) === 'date';
+}
+
 // Compound type guards
 export function isArray(schema: SomeType): schema is $ZodArray {
   return getType(schema) === 'array';
@@ -90,6 +109,22 @@ export function isObject(schema: SomeType): schema is $ZodObject {
 
 export function isRecord(schema: SomeType): schema is $ZodRecord {
   return getType(schema) === 'record';
+}
+
+export function isMap(schema: SomeType): schema is $ZodMap {
+  return getType(schema) === 'map';
+}
+
+export function isSet(schema: SomeType): schema is $ZodSet {
+  return getType(schema) === 'set';
+}
+
+export function isPromise(schema: SomeType): schema is $ZodPromise {
+  return getType(schema) === 'promise';
+}
+
+export function isFunction(schema: SomeType): schema is $ZodFunction {
+  return getType(schema) === 'function';
 }
 
 export function isUnion(schema: SomeType): schema is $ZodUnion {
