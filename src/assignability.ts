@@ -242,11 +242,17 @@ export function isAssignable(schemaA: SomeType, schemaB: SomeType): boolean {
   if (isMap(schemaA) && isMap(schemaB)) {
     const { key: kA, value: vA } = getMapKeyValue(schemaA);
     const { key: kB, value: vB } = getMapKeyValue(schemaB);
-    if (!kA || !kB || !vA || !vB) return false;
+    if (!kA || !kB || !vA || !vB) {
+      return false;
+    }
     // Invariant Key
-    if (!isAssignable(kA, kB) || !isAssignable(kB, kA)) return false;
+    if (!isAssignable(kA, kB) || !isAssignable(kB, kA)) {
+      return false;
+    }
     // Invariant Value
-    if (!isAssignable(vA, vB) || !isAssignable(vB, vA)) return false;
+    if (!isAssignable(vA, vB) || !isAssignable(vB, vA)) {
+      return false;
+    }
     return true;
   }
 
@@ -256,7 +262,9 @@ export function isAssignable(schemaA: SomeType, schemaB: SomeType): boolean {
     const { args: argsB, returns: retB } = getFunctionArgsReturns(schemaB);
 
     // Returns: Covariant (A extends B)
-    if (!isAssignable(retA, retB)) return false;
+    if (!isAssignable(retA, retB)) {
+      return false;
+    }
 
     // Args: Contravariant (B extends A)
     // argsA/B are Tuples.
