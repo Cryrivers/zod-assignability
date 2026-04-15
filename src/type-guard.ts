@@ -28,9 +28,16 @@ import {
   $ZodFunction,
   $ZodVoid,
   $ZodNaN,
+  $ZodLazy,
+  $ZodDefault,
+  $ZodCatch,
+  $ZodReadonly,
+  $ZodNonOptional,
+  $ZodPrefault,
+  $ZodPipe,
 } from 'zod/v4/core';
 
-import { getType } from './utils.js';
+import { getType } from './utils';
 
 // Wrapper guards
 export function isOptional(schema: SomeType): schema is $ZodOptional {
@@ -146,4 +153,27 @@ export function isEnum(schema: SomeType): schema is $ZodEnum {
 // Custom/instanceof guard
 export function isCustom(schema: SomeType): schema is $ZodCustom {
   return getType(schema) === 'custom';
+}
+
+// Transparent wrappers whose TS output type equals their inner type.
+export function isLazy(schema: SomeType): schema is $ZodLazy {
+  return getType(schema) === 'lazy';
+}
+export function isDefault(schema: SomeType): schema is $ZodDefault {
+  return getType(schema) === 'default';
+}
+export function isCatch(schema: SomeType): schema is $ZodCatch {
+  return getType(schema) === 'catch';
+}
+export function isReadonly(schema: SomeType): schema is $ZodReadonly {
+  return getType(schema) === 'readonly';
+}
+export function isNonOptional(schema: SomeType): schema is $ZodNonOptional {
+  return getType(schema) === 'nonoptional';
+}
+export function isPrefault(schema: SomeType): schema is $ZodPrefault {
+  return getType(schema) === 'prefault';
+}
+export function isPipe(schema: SomeType): schema is $ZodPipe {
+  return getType(schema) === 'pipe';
 }

@@ -24,7 +24,7 @@ import {
   isFunction,
   isVoid,
   isZodNaN,
-} from './type-guard.js';
+} from './type-guard';
 import {
   getArrayElement,
   getEnumValues,
@@ -41,7 +41,39 @@ import {
   getSetValue,
   getPromiseInner,
   getFunctionArgsReturns,
-} from './utils.js';
+  normalize,
+} from './utils';
+
+export interface TraceStep {
+  path: string;
+  reason: string;
+}
+
+export interface CheckContext {
+  visited: Map<SomeType, Set<SomeType>>;
+  trace?: TraceStep[];
+  path: string[];
+}
+
+function createContext(trace?: TraceStep[]): CheckContext {
+  return { visited: new Map(), trace, path: [] };
+}
+
+function fail(ctx: CheckContext, reason: string): false {
+  if (ctx.trace) {
+    ctx.trace.push({ path: ctx.path.join('.') || '<root>', reason });
+  }
+  return false;
+}
+
+function withPath<T>(ctx: CheckContext, segment: string, fn: () => T): T {
+  ctx.path.push(segment);
+  try {
+    return fn();
+  } finally {
+    ctx.path.pop();
+  }
+}
 
 type PrimitiveTypeName = 'string' | 'number' | 'boolean' | 'bigint' | 'symbol';
 
@@ -78,16 +110,47 @@ function isOptionalSchema(schema: SomeType): boolean {
   }
 }
 
-// Main checker
+// Main checker — public API stays boolean-only.
 export function isAssignable(schemaA: SomeType, schemaB: SomeType): boolean {
-  // Handle direct identity
+  return check(schemaA, schemaB, createContext());
+}
+
+export function check(
+  rawA: SomeType,
+  rawB: SomeType,
+  ctx: CheckContext,
+): boolean {
+  // Identity + co-inductive cycle guard BEFORE normalization. Using raw
+  // references is critical: `z.lazy().def.getter()` is not memoized, so a
+  // recursive schema like `Tree = z.lazy(() => z.object({ children: z.array(Tree) }))`
+  // produces fresh inner schemas on every unwrap. The user-visible `Tree`
+  // reference is the only stable handle we can key on.
+  if (rawA === rawB) {
+    return true;
+  }
+  const seenForA = ctx.visited.get(rawA);
+  if (seenForA?.has(rawB)) {
+    return true;
+  }
+  if (seenForA) {
+    seenForA.add(rawB);
+  } else {
+    ctx.visited.set(rawA, new Set([rawB]));
+  }
+
+  // Transparent wrappers (lazy/default/catch/readonly/pipe/…) don't change
+  // the output type — unwrap before dispatch.
+  const schemaA = normalize(rawA);
+  const schemaB = normalize(rawB);
+
   if (schemaA === schemaB) {
     return true;
   }
 
-  // Normalize optional/nullable wrappers on B for comparison
-  // We treat optional/nullable as unions with undefined/null for variance-only contexts,
-  // but object property optionality is handled specially.
+  // Shadow the public entry so recursive calls in this body inherit ctx
+  // (visited set + optional trace) instead of starting fresh.
+  const isAssignable = (a: SomeType, b: SomeType) => check(a, b, ctx);
+
   const typeA = getType(schemaA);
   const typeB = getType(schemaB);
 
@@ -108,11 +171,16 @@ export function isAssignable(schemaA: SomeType, schemaB: SomeType): boolean {
     return false;
   } // unknown not safely assignable
 
-  // B is optional or nullable: accept A that matches inner type or the wrapper value
+  // B is optional or nullable: treat as union-with-undefined/null so that
+  // a source union containing undefined/null also matches (the prior
+  // non-symmetric behavior was the README's documented caveat).
   if (isOptional(schemaB)) {
     const innerB = unwrapOptional(schemaB);
     if (getType(schemaA) === 'undefined') {
       return true;
+    }
+    if (isUnion(schemaA) || isOptional(schemaA)) {
+      return isAssignable(schemaA, z.union([innerB, z.undefined()]));
     }
     return isAssignable(schemaA, innerB);
   }
@@ -120,6 +188,9 @@ export function isAssignable(schemaA: SomeType, schemaB: SomeType): boolean {
     const innerB = unwrapNullable(schemaB);
     if (getType(schemaA) === 'null') {
       return true;
+    }
+    if (isUnion(schemaA) || isNullable(schemaA)) {
+      return isAssignable(schemaA, z.union([innerB, z.null()]));
     }
     return isAssignable(schemaA, innerB);
   }
@@ -218,7 +289,15 @@ export function isAssignable(schemaA: SomeType, schemaB: SomeType): boolean {
     primitiveTypes.has((typeA ?? '') as PrimitiveTypeName) &&
     primitiveTypes.has((typeB ?? '') as PrimitiveTypeName)
   ) {
-    return typeA === typeB;
+    if (typeA === typeB) {
+      return true;
+    }
+    return fail(ctx, `type "${typeA}" is not assignable to "${typeB}"`);
+  }
+
+  // null ↔ null (not a primitive per TS typeof rules, but structurally equal).
+  if (typeA === 'null' && typeB === 'null') {
+    return true;
   }
 
   // Date
@@ -338,10 +417,9 @@ export function isAssignable(schemaA: SomeType, schemaB: SomeType): boolean {
       (opt) => isArray(opt) && isAssignable(schemaA, opt),
     );
   }
-  if (isUnion(schemaA) && isArray(schemaB)) {
-    // (A | B | ...)[] variance: this case represents array union as source which we don't use in tests.
-    return false;
-  }
+  // Note: a source union (of arrays or otherwise) targeting an array is
+  // handled by the generic "source union: every option must be assignable"
+  // rule further below — don't short-circuit here.
 
   // Tuples: invariant length and element-wise assignability
   if (isTuple(schemaA) && isTuple(schemaB)) {
@@ -373,25 +451,25 @@ export function isAssignable(schemaA: SomeType, schemaB: SomeType): boolean {
       const bIsOptional = isOptionalSchema(propB);
 
       if (!propA) {
-        // If B's property is optional, A can be missing it.
         if (bIsOptional) {
           continue;
         }
-        // Otherwise, A must have the property.
-        return false;
+        return fail(ctx, `missing required property "${key}"`);
       }
 
       const bInner = bIsOptional ? unwrapOptional(propB) : propB;
       const aIsOptional = isOptionalSchema(propA);
       const aInner = aIsOptional ? unwrapOptional(propA) : propA;
 
-      // If B requires key, A must require key
       if (!bIsOptional && aIsOptional) {
-        return false;
+        return fail(
+          ctx,
+          `property "${key}" is optional in source but required in target`,
+        );
       }
 
-      // Property type covariance
-      if (!isAssignable(aInner, bInner)) {
+      const ok = withPath(ctx, key, () => isAssignable(aInner, bInner));
+      if (!ok) {
         return false;
       }
     }
@@ -461,9 +539,11 @@ export function isAssignable(schemaA: SomeType, schemaB: SomeType): boolean {
 
   // Fallback: try base primitive widening where applicable
   if (typeB === 'string' || typeB === 'number' || typeB === 'boolean') {
-    // Optional/nullable handled earlier; literals handled earlier.
-    return typeA === typeB;
+    if (typeA === typeB) {
+      return true;
+    }
+    return fail(ctx, `type "${typeA}" is not assignable to "${typeB}"`);
   }
 
-  return false;
+  return fail(ctx, `no rule for "${typeA}" → "${typeB}"`);
 }
