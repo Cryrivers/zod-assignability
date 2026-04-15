@@ -41,6 +41,18 @@ import { isAssignable } from 'zod-assignability';
 - `isAssignable(source: SomeType, target: SomeType): boolean`
   - Returns `true` if `source` is assignable to `target` under the conservative rules described below.
   - `SomeType` refers to Zod v4 core types (`import type { SomeType } from 'zod/v4/core'`).
+- `explainAssignability(source: SomeType, target: SomeType): ExplainResult`
+  - Same semantics as `isAssignable`, but on failure returns `{ ok: false, reason, path, trace }` — useful for debugging why two schemas don't match. On success returns `{ ok: true }`.
+  - `path` is a dotted navigation string (e.g. `user.age`) pointing at the first mismatch.
+
+```ts
+import { explainAssignability } from 'zod-assignability';
+
+const S = z.object({ user: z.object({ age: z.string() }) });
+const T = z.object({ user: z.object({ age: z.number() }) });
+explainAssignability(S, T);
+// { ok: false, reason: 'type "string" is not assignable to "number"', path: 'user.age', trace: [...] }
+```
 
 ## Quick Start
 
@@ -200,13 +212,34 @@ isAssignable(A, C); // true (A is assignable because C's 'age' is optional)
     isAssignable(Dog, Animal); // false
     ```
 
+- Transparent wrappers (unwrapped automatically)
+  - `default`, `catch`, `readonly`, `nonoptional`, `prefault`, `pipe` (uses the `out` type), and `lazy` do not change the TS output type and are normalized away before dispatch.
+    ```ts
+    isAssignable(z.string().default('x'), z.string()); // true
+    isAssignable(z.string(), z.string().catch('x')); // true
+    isAssignable(z.array(z.string()).readonly(), z.array(z.string())); // true
+    isAssignable(z.string().optional().nonoptional(), z.string()); // true
+    ```
+
+- Recursive / `z.lazy` schemas
+  - Self-referential schemas are supported via co-inductive cycle detection; they won't stack-overflow.
+    ```ts
+    type Tree = { value: string; children: Tree[] };
+    const Tree: z.ZodType<Tree> = z.lazy(() =>
+      z.object({ value: z.string(), children: z.array(Tree) }),
+    );
+    isAssignable(Tree, Tree); // true
+    ```
+
 ## Notes and Caveats
 
 - This library inspects Zod v4 core internals (via `schema._zod.def`). If Zod’s internals change, helpers may need updates.
 - Optional property detection in objects also treats `Union<..., undefined>` as optional.
-- Nullable detection focuses on the wrapper form (`z.string().nullable()`); unions with `null` are not unwrapped as a nullable wrapper.
+- `z.union([T, z.undefined()])` and `T.optional()` are interchangeable at the top level; same for `z.union([T, z.null()])` vs `T.nullable()`.
 - Excess property checks are not enforced; extra source properties are allowed.
 - Instanceof/custom schemas are treated conservatively; only identical schemas are assignable.
+- Tuple rest elements (`z.tuple([...], rest)`) are not yet modeled — length is treated as fixed.
+- Intersections of objects are merged via shallow spread; deeply overlapping property types are not structurally intersected.
 
 ## Development
 
