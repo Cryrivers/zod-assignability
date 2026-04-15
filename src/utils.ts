@@ -82,6 +82,10 @@ export function getTupleItems(schema: $ZodTuple) {
   return schema._zod.def.items;
 }
 
+export function getTupleRest(schema: $ZodTuple): SomeType | undefined {
+  return schema._zod.def.rest;
+}
+
 export function getObjectShape(schema: $ZodObject) {
   return schema._zod.def.shape;
 }

@@ -138,13 +138,19 @@ isAssignable(A, C); // true (A is assignable because C's 'age' is optional)
     ```
 
 - Tuples
-  - Invariant length; element-wise assignability.
+  - Fixed-length: element-wise assignability, lengths must match.
+  - Variadic (`z.tuple([...], rest)`): source must provide at least the target's fixed prefix; extra source items must match `rest`; variadic-to-variadic rest is covariant.
     ```ts
     isAssignable(
       z.tuple([z.string(), z.number()]),
       z.tuple([z.string(), z.number()]),
     ); // true
     isAssignable(z.tuple([z.string(), z.number()]), z.tuple([z.string()])); // false
+    // [string, number] extends [string, ...number[]]
+    isAssignable(
+      z.tuple([z.string(), z.number()]),
+      z.tuple([z.string()], z.number()),
+    ); // true
     ```
 
 - Objects (structural)
@@ -238,8 +244,8 @@ isAssignable(A, C); // true (A is assignable because C's 'age' is optional)
 - `z.union([T, z.undefined()])` and `T.optional()` are interchangeable at the top level; same for `z.union([T, z.null()])` vs `T.nullable()`.
 - Excess property checks are not enforced; extra source properties are allowed.
 - Instanceof/custom schemas are treated conservatively; only identical schemas are assignable.
-- Tuple rest elements (`z.tuple([...], rest)`) are not yet modeled — length is treated as fixed.
-- Intersections of objects are merged via shallow spread; deeply overlapping property types are not structurally intersected.
+- Tuple rest elements (`z.tuple([...], rest)`) are supported: a fixed-length source matches a variadic target when extra items are assignable to the rest type; variadic-to-variadic is covariant in the rest type.
+- Intersections of objects merge structurally: overlapping property keys are intersected (not overwritten), so `({x: {a}} & {x: {b}})` correctly extends `{x: {a; b}}`.
 
 ## Development
 

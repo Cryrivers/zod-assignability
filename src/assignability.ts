@@ -41,6 +41,7 @@ import {
   getSetValue,
   getPromiseInner,
   getFunctionArgsReturns,
+  getTupleRest,
   normalize,
 } from './utils';
 
@@ -421,21 +422,56 @@ export function check(
   // handled by the generic "source union: every option must be assignable"
   // rule further below — don't short-circuit here.
 
-  // Tuples: invariant length and element-wise assignability
+  // Tuples: element-wise assignability + optional rest (variadic tail).
+  // If target has rest R, source may be longer than target's fixed items;
+  // extra source items must be assignable to R. If source has rest too,
+  // its rest must also be assignable to target's rest (covariant).
   if (isTuple(schemaA) && isTuple(schemaB)) {
     const itemsA = getTupleItems(schemaA);
     const itemsB = getTupleItems(schemaB);
     if (!itemsA || !itemsB) {
       return false;
     }
-    if (itemsA.length !== itemsB.length) {
-      return false;
+    const restA = getTupleRest(schemaA);
+    const restB = getTupleRest(schemaB);
+
+    if (!restB) {
+      // Target is fixed-length: source must be fixed-length with equal length.
+      if (restA) {
+        return false;
+      }
+      if (itemsA.length !== itemsB.length) {
+        return false;
+      }
+    } else {
+      // Target has a rest element: source must have at least as many fixed
+      // items as target does (otherwise target's required fixed positions
+      // couldn't be filled). Source may be longer; tail matches restB.
+      if (itemsA.length < itemsB.length) {
+        return false;
+      }
     }
-    for (let i = 0; i < itemsA.length; i++) {
+
+    const fixedLen = Math.min(itemsA.length, itemsB.length);
+    for (let i = 0; i < fixedLen; i++) {
       if (!isAssignable(itemsA[i], itemsB[i])) {
         return false;
       }
     }
+
+    if (restB) {
+      // Source fixed items beyond target's fixed items must match restB.
+      for (let i = fixedLen; i < itemsA.length; i++) {
+        if (!isAssignable(itemsA[i], restB)) {
+          return false;
+        }
+      }
+      // Source's own rest (if any) must be assignable to restB.
+      if (restA && !isAssignable(restA, restB)) {
+        return false;
+      }
+    }
+
     return true;
   }
 
@@ -507,12 +543,19 @@ export function check(
     if (!leftA || !rightA) {
       return false;
     }
-    // If both sides are objects, create a virtual merged object to check against B.
+    // If both sides are objects, build a structurally merged object: for
+    // overlapping keys, the combined property type is the intersection of
+    // both sides (modeled as z.intersection), which is stronger than a
+    // shallow spread that would drop the left-hand type on collision.
     if (isObject(leftA) && isObject(rightA)) {
-      const mergedShape = {
-        ...getObjectShape(leftA),
-        ...getObjectShape(rightA),
-      };
+      const shapeL = getObjectShape(leftA);
+      const shapeR = getObjectShape(rightA);
+      const mergedShape: Record<string, SomeType> = { ...shapeL };
+      for (const key of Object.keys(shapeR)) {
+        mergedShape[key] = shapeL[key]
+          ? z.intersection(shapeL[key], shapeR[key])
+          : shapeR[key];
+      }
       const virtualSchema = z.object(mergedShape);
       if (isAssignable(virtualSchema, schemaB)) {
         return true;

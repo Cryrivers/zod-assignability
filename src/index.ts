@@ -5,3 +5,5 @@ export {
   type ExplainSuccess,
   type ExplainFailure,
 } from './explain';
+export * as guards from './type-guard';
+export * as utils from './utils';
